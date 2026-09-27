@@ -1,0 +1,301 @@
+﻿@page "/invoices/create"
+@rendermode InteractiveServer
+
+@using FluentValidation
+@using InvoiceManagement.Application.DTOs
+@using InvoiceManagement.Application.Interfaces
+@using InvoiceManagement.Domain.Enums
+
+@inject IInvoiceService InvoiceService
+@inject NavigationManager Navigation
+
+<PageTitle>New Invoice</PageTitle>
+
+<div class="mb-4">
+    <h1 class="mb-1">New Invoice</h1>
+
+    <p class="text-muted mb-0">
+        Create a new invoice and add its line items.
+    </p>
+</div>
+
+@if (validationErrors.Any())
+{
+    <div class="alert alert-danger" role="alert">
+        <strong>Please fix the following:</strong>
+
+        <ul class="mb-0 mt-2">
+            @foreach (var error in validationErrors)
+            {
+                <li>@error</li>
+            }
+        </ul>
+    </div>
+}
+
+<EditForm Model="@model" OnValidSubmit="SaveAsync">
+
+    <div class="mb-3">
+        <label class="form-label">
+            Invoice Number
+        </label>
+
+        <InputText class="form-control"
+                   @bind-Value="model.InvoiceNumber" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">
+            Customer Name
+        </label>
+
+        <InputText class="form-control"
+                   @bind-Value="model.CustomerName" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">
+            Invoice Date
+        </label>
+
+        <InputDate class="form-control"
+                   @bind-Value="model.InvoiceDate" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">
+            Status
+        </label>
+
+        <InputSelect class="form-select"
+                     @bind-Value="model.Status">
+
+            @foreach (var status in Enum.GetValues<InvoiceStatus>())
+            {
+                <option value="@status">
+                    @status
+                </option>
+            }
+
+        </InputSelect>
+    </div>
+
+    <hr />
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+
+        <div>
+            <h4 class="mb-1">
+                Line Items
+            </h4>
+
+            <small class="text-muted">
+                Add the products or services included in this invoice.
+            </small>
+        </div>
+
+        <button type="button"
+                class="btn btn-outline-primary"
+                disabled="@isSaving"
+                @onclick="AddLineItem">
+            + Add Item
+        </button>
+
+    </div>
+
+    <div class="row mb-2 text-muted fw-semibold">
+
+        <div class="col-md-5">
+            Description
+        </div>
+
+        <div class="col-md-2">
+            Quantity
+        </div>
+
+        <div class="col-md-2">
+            Unit Price
+        </div>
+
+        <div class="col-md-2 text-end">
+            Total
+        </div>
+
+        <div class="col-md-1"></div>
+
+    </div>
+
+    @foreach (var item in model.LineItems)
+    {
+        <div class="row align-items-center mb-3">
+
+            <div class="col-md-5">
+                <InputText class="form-control"
+                           placeholder="Description"
+                           @bind-Value="item.Description" />
+            </div>
+
+            <div class="col-md-2">
+                <InputNumber class="form-control"
+                             placeholder="Quantity"
+                             @bind-Value="item.Quantity"
+                             @bind-Value:after="RefreshTotals" />
+            </div>
+
+            <div class="col-md-2">
+                <InputNumber class="form-control"
+                             placeholder="Unit Price"
+                             @bind-Value="item.UnitPrice"
+                             @bind-Value:after="RefreshTotals" />
+            </div>
+
+            <div class="col-md-2 text-end">
+                <strong>
+                    @((item.Quantity * item.UnitPrice).ToString("N2"))
+                </strong>
+            </div>
+
+            <div class="col-md-1 text-end">
+                <button type="button"
+                        class="btn btn-outline-danger"
+                        title="@GetRemoveButtonTitle()"
+                        disabled="@(model.LineItems.Count <= 1 || isSaving)"
+                        @onclick="() => RemoveLineItem(item)">
+                    ×
+                </button>
+            </div>
+
+        </div>
+    }
+
+    <hr />
+
+    <div class="d-flex justify-content-end mb-4">
+
+        <div class="text-end">
+
+            <span class="text-muted d-block">
+                Invoice Total
+            </span>
+
+            <h3 class="mb-0">
+                @Total.ToString("N2")
+            </h3>
+
+        </div>
+
+    </div>
+
+    <div>
+        <button type="submit"
+                class="btn btn-primary"
+                disabled="@isSaving">
+
+            @if (isSaving)
+            {
+                <span class="spinner-border spinner-border-sm me-2"
+                      aria-hidden="true">
+                </span>
+
+                <span>Saving...</span>
+            }
+            else
+            {
+                <span>Save Invoice</span>
+            }
+
+        </button>
+
+        <a href="/invoices"
+           class="btn btn-secondary ms-2">
+            Cancel
+        </a>
+    </div>
+
+</EditForm>
+
+@code {
+    private SaveInvoiceDto model = new()
+    {
+        LineItems =
+        [
+            new SaveInvoiceLineItemDto()
+        ]
+    };
+
+    private List<string> validationErrors = [];
+
+    private bool isSaving;
+
+    private decimal Total =>
+        model.LineItems.Sum(x =>
+            x.Quantity * x.UnitPrice);
+
+    private void RefreshTotals()
+    {
+        StateHasChanged();
+    }
+
+    private void AddLineItem()
+    {
+        if (isSaving)
+            return;
+
+        model.LineItems.Add(
+            new SaveInvoiceLineItemDto());
+    }
+
+    private void RemoveLineItem(
+        SaveInvoiceLineItemDto item)
+    {
+        if (isSaving ||
+            model.LineItems.Count <= 1)
+        {
+            return;
+        }
+
+        model.LineItems.Remove(item);
+    }
+
+    private string GetRemoveButtonTitle()
+    {
+        return model.LineItems.Count <= 1
+            ? "An invoice must contain at least one line item."
+            : "Remove item";
+    }
+
+    private async Task SaveAsync()
+    {
+        if (isSaving)
+            return;
+
+        validationErrors.Clear();
+
+        isSaving = true;
+
+        try
+        {
+            await InvoiceService.CreateAsync(model);
+
+            Navigation.NavigateTo("/invoices");
+        }
+        catch (ValidationException ex)
+        {
+            validationErrors = ex.Errors
+                .Select(x => x.ErrorMessage)
+                .Where(x =>
+                    !string.IsNullOrWhiteSpace(x))
+                .Distinct()
+                .ToList();
+
+            if (validationErrors.Count == 0)
+            {
+                validationErrors.Add(ex.Message);
+            }
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+}
